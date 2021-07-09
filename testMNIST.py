@@ -1,6 +1,8 @@
 import os
 import random
 import itertools
+from pickle import dump
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -85,14 +87,48 @@ valid_labels = valid_labels[rand_idx]
 #valid_images = tf.data.Dataset.from_tensor_slices(valid_images)
 
 
-@tf.function
-def train_step(batch, labels):
-    with tf.GradientTape() as tape:
-        preds = model(batch, training=True)
-        loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(labels, preds))
+def vgg_feature_extractor(dataset):
+    vgg = VGG16(weights='imagenet', include_top=False, input_shape=SHAPE)
+    vgg.trainable = False
+    vgg_out = vgg.output
+    vgg_out = Flatten()(vgg_out)
+    my_vgg = tf.keras.Model(inputs=vgg.input, outputs=vgg_out)
+    features = my_vgg.predict(dataset)
+    print(features.shape)
+    return features
 
+
+def my_model():
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(512, activation='relu'),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(1, activation='sigmoid'),
+    ])
+
+    return model
+
+
+@tf.function
+def train_step(batch):
+    batch_shape = tf.shape(batch)
+
+    noise = tf.random.normal(shape=batch_shape, stddev=0.1)
+
+    new_batch = tf.concat([batch, noise], axis=0)
+    new_labels = tf.concat([tf.ones(shape=(batch_shape[0],)), tf.zeros(shape=(batch_shape[0],))], axis=0)
+
+    with tf.GradientTape() as tape:
+        preds = model(new_batch, training=True)
+        loss = tf.reduce_sum(tf.keras.losses.binary_crossentropy(new_labels, preds))
         grad = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(grad, model.trainable_variables))
+
+
+def train(dataset, epochs):
+
+    for epoch in range(epochs):
+        for batch in dataset:
+            train_step(batch)
 
 
 def get_model(train=True):
@@ -109,6 +145,7 @@ def get_model(train=True):
         x = Activation('relu')(x)
     else:
         x = vgg_out
+
     x = Flatten()(x)
     x = Dense(512, activation='relu')(x)
     x = Dense(128, activation='relu')(x)
@@ -136,7 +173,7 @@ def get_model(train=True):
 model = get_model()
 model.summary()
 
-optimizer = tf.keras.optimizers.Adam()
+optimizer = tf.keras.optimizers.Adam(lr=1e-4)
 
 #model.fit(normal_train_images, normal_train_labels, batch_size=batch_size, epochs=20)
 
