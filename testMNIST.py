@@ -1,20 +1,14 @@
+import itertools
 import os
 import random
-import itertools
-from pickle import dump
 
-import numpy as np
+import keras
 import matplotlib.pyplot as plt
-
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import *
-from tensorflow.keras.layers import *
-from tensorflow.keras.callbacks import *
-from tensorflow.keras.optimizers import *
-from tensorflow.keras.applications import VGG16
-from tensorflow.keras.applications.vgg16 import preprocess_input
-
 from sklearn.metrics import confusion_matrix, accuracy_score
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.layers import *
 
 
 def plot_confusion_matrix(cm, classes, title='Confusion matrix', cmap=plt.cm.Blues):
@@ -111,9 +105,7 @@ def my_model():
 @tf.function
 def train_step(batch):
     batch_shape = tf.shape(batch)
-
     noise = tf.random.normal(shape=batch_shape, stddev=0.1)
-
     new_batch = tf.concat([batch, noise], axis=0)
     new_labels = tf.concat([tf.ones(shape=(batch_shape[0],)), tf.zeros(shape=(batch_shape[0],))], axis=0)
 
@@ -123,65 +115,58 @@ def train_step(batch):
         grad = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(grad, model.trainable_variables))
 
+    if new_batch % 256 == 0:
+        print(
+            "Training loss (for one batch) at step %d: %.4f"
+            % (batch, float(loss))
+        )
+        print("Seen so far: %s samples" % ((new_batch + 1) * batch_size))
+
 
 def train(dataset, epochs):
-
     for epoch in range(epochs):
         for batch in dataset:
             train_step(batch)
 
 
-def get_model(train=True):
+def get_inference_model(mymodel):
 
     vgg = VGG16(weights='imagenet', include_top=False, input_shape=SHAPE)
     vgg.trainable = False
     vgg_out = vgg.output
+    my_inference_model = tf.keras.Model(inputs=vgg.input, outputs=mymodel(vgg_out))
 
-    noise = Lambda(tf.zeros_like)(vgg_out)
-    noise = GaussianNoise(0.1)(noise)
+    return my_inference_model
 
-    if train:
-        x = Lambda(lambda z: tf.concat(z, axis=0))([vgg_out, noise])
-        x = Activation('relu')(x)
-    else:
-        x = vgg_out
+    # model = Model(vgg.input, vgg_out)
+    # model.compile(optimizer=Adam(lr=1e-4), loss='binary_crossentropy', metrics='accuracy')
 
-    x = Flatten()(x)
-    x = Dense(512, activation='relu')(x)
-    x = Dense(128, activation='relu')(x)
-    out = Dense(1, activation='sigmoid')(x)
+    # my_model = tf.keras.Sequential([
+    #     tf.keras.layers.InputLayer((vgg.output.shape[1:])),
+    #     tf.keras.layers.Flatten(),
+    #     tf.keras.layers.Dense(512, activation='relu'),
+    #     tf.keras.layers.Dense(128, activation='relu'),
+    #     tf.keras.layers.Dense(1, activation='sigmoid'),
+    # ])
 
-    model = Model(vgg.input, out)
-    model.compile(optimizer=Adam(lr=1e-4), loss='binary_crossentropy', metrics='accuracy')
 
-    my_model = tf.keras.Sequential([
-        tf.keras.layers.InputLayer((vgg.output.shape[1:])),
-        tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(512, activation='relu'),
-        tf.keras.layers.Dense(128, activation='relu'),
-        tf.keras.layers.Dense(1, activation='sigmoid'),
-    ])
+model = my_model()
+optimizer = tf.keras.optimizers.Adam(lr=1e-4)
+mnist_features = vgg_feature_extractor(normal_train_images)
+print(mnist_features.shape)
+train(mnist_features, 20)
 
-    # test
-    my_inference_model = tf.keras.Model(inputs=vgg.input, outputs=my_model(vgg.output))
-
-    return model
-
+model.summary()
 
 # es = EarlyStopping(monitor='val_loss', mode='auto', restore_best_weights=True, verbose=1, patience=5)
 
-model = get_model()
-model.summary()
-
-optimizer = tf.keras.optimizers.Adam(lr=1e-4)
-
-#model.fit(normal_train_images, normal_train_labels, batch_size=batch_size, epochs=20)
+# model.fit(normal_train_images, normal_train_labels, batch_size=batch_size, epochs=20)
 
 valid_labels = np.argmax(np.vstack(valid_labels), axis=1)
 print(valid_labels.shape)
 
 # SWITCH TO INFERENCE MODE TO COMPUTE PREDICTIONS
-inference_model = get_model(train=False)
+inference_model = get_inference_model(model)
 inference_model.set_weights(model.get_weights())
 
 # COMPUTE PREDICTIONS ON TEST DATA
