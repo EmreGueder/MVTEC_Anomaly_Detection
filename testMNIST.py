@@ -83,7 +83,6 @@ def vgg_feature_extractor(dataset):
     vgg = VGG16(weights='imagenet', include_top=False, input_shape=SHAPE)
     vgg.trainable = False
     vgg_out = vgg.output
-    # vgg_out = Flatten()(vgg_out)
     my_vgg = tf.keras.Model(inputs=vgg.input, outputs=vgg_out)
     features = my_vgg.predict(dataset)
     print(features.shape)
