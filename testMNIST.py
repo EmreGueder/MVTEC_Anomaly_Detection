@@ -102,12 +102,11 @@ def my_model():
     return model
 
 
-@tf.function
 def train_step(batch):
     batch_shape = tf.shape(batch)
     noise = tf.random.normal(shape=batch_shape, stddev=0.1)
     new_batch = tf.concat([batch, noise], axis=0)
-    new_labels = tf.concat([tf.ones(shape=(batch_shape[0],)), tf.zeros(shape=(batch_shape[0],))], axis=0)
+    new_labels = tf.concat([tf.ones(shape=(batch_shape[0], 1)), tf.zeros(shape=(batch_shape[0], 1))], axis=0)
 
     with tf.GradientTape() as tape:
         preds = model(new_batch, training=True)
@@ -115,18 +114,18 @@ def train_step(batch):
         grad = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(grad, model.trainable_variables))
 
-    if new_batch % 256 == 0:
-        print(
-            "Training loss (for one batch) at step %d: %.4f"
-            % (batch, float(loss))
-        )
-        print("Seen so far: %s samples" % ((new_batch + 1) * batch_size))
+    train_acc_metric.update_state(new_labels, preds)
 
 
 def train(dataset, epochs):
     for epoch in range(epochs):
+        print("\nStart of epoch %d" % (epoch,))
         for batch in dataset:
             train_step(batch)
+
+        train_acc = train_acc_metric.result()
+        print("Training acc over epoch: %.4f" % (float(train_acc),))
+        train_acc_metric.reset_states()
 
 
 def get_inference_model(mymodel):
@@ -134,6 +133,7 @@ def get_inference_model(mymodel):
     vgg = VGG16(weights='imagenet', include_top=False, input_shape=SHAPE)
     vgg.trainable = False
     vgg_out = vgg.output
+    # mymodel.add(InputLayer((vgg.output.shape[1:])))
     my_inference_model = tf.keras.Model(inputs=vgg.input, outputs=mymodel(vgg_out))
 
     return my_inference_model
@@ -152,9 +152,13 @@ def get_inference_model(mymodel):
 
 model = my_model()
 optimizer = tf.keras.optimizers.Adam(lr=1e-4)
+# Prepare the metrics.
+train_acc_metric = keras.metrics.BinaryAccuracy()
+
 mnist_features = vgg_feature_extractor(normal_train_images)
-print(mnist_features.shape)
-train(mnist_features, 20)
+train_dataset = tf.data.Dataset.from_tensor_slices(mnist_features)
+train_dataset = train_dataset.shuffle(batch_size).batch(batch_size)
+train(train_dataset, 20)
 
 model.summary()
 
@@ -167,7 +171,6 @@ print(valid_labels.shape)
 
 # SWITCH TO INFERENCE MODE TO COMPUTE PREDICTIONS
 inference_model = get_inference_model(model)
-inference_model.set_weights(model.get_weights())
 
 # COMPUTE PREDICTIONS ON TEST DATA
 print(valid_images.shape)
