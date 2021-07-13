@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.metrics import roc_curve, auc
 from tensorflow.keras.applications import VGG16
 from tensorflow.keras.layers import *
 
@@ -63,7 +64,6 @@ normal_train_images = train_images[train_labels == normal_label]
 print(normal_train_images.shape)
 
 normal_train_labels = train_labels[train_labels == normal_label]
-# normal_train_images = tf.data.Dataset.from_tensor_slices(normal_train_images).shuffle(batch_size).batch(batch_size)
 
 # Get test images with number 'one' and 'two'
 normal_test_images = test_images[test_labels == normal_label]
@@ -78,14 +78,12 @@ np.random.shuffle(rand_idx)
 valid_images = valid_images[rand_idx]
 valid_labels = valid_labels[rand_idx]
 
-#valid_images = tf.data.Dataset.from_tensor_slices(valid_images)
-
 
 def vgg_feature_extractor(dataset):
     vgg = VGG16(weights='imagenet', include_top=False, input_shape=SHAPE)
     vgg.trainable = False
     vgg_out = vgg.output
-    vgg_out = Flatten()(vgg_out)
+    # vgg_out = Flatten()(vgg_out)
     my_vgg = tf.keras.Model(inputs=vgg.input, outputs=vgg_out)
     features = my_vgg.predict(dataset)
     print(features.shape)
@@ -94,6 +92,8 @@ def vgg_feature_extractor(dataset):
 
 def my_model():
     model = tf.keras.Sequential([
+        tf.keras.layers.InputLayer((1, 1, 512)),
+        tf.keras.layers.Flatten(),
         tf.keras.layers.Dense(512, activation='relu'),
         tf.keras.layers.Dense(128, activation='relu'),
         tf.keras.layers.Dense(1, activation='sigmoid'),
@@ -128,26 +128,15 @@ def train(dataset, epochs):
         train_acc_metric.reset_states()
 
 
-def get_inference_model(mymodel):
+def get_inference_model(my_model):
 
     vgg = VGG16(weights='imagenet', include_top=False, input_shape=SHAPE)
     vgg.trainable = False
     vgg_out = vgg.output
-    # mymodel.add(InputLayer((vgg.output.shape[1:])))
-    my_inference_model = tf.keras.Model(inputs=vgg.input, outputs=mymodel(vgg_out))
+    my_inference_model = tf.keras.Model(inputs=vgg.input, outputs=my_model(vgg_out))
+    my_inference_model.compile(optimizer=optimizer, loss=keras.losses.binary_crossentropy, metrics=['accuracy'])
 
     return my_inference_model
-
-    # model = Model(vgg.input, vgg_out)
-    # model.compile(optimizer=Adam(lr=1e-4), loss='binary_crossentropy', metrics='accuracy')
-
-    # my_model = tf.keras.Sequential([
-    #     tf.keras.layers.InputLayer((vgg.output.shape[1:])),
-    #     tf.keras.layers.Flatten(),
-    #     tf.keras.layers.Dense(512, activation='relu'),
-    #     tf.keras.layers.Dense(128, activation='relu'),
-    #     tf.keras.layers.Dense(1, activation='sigmoid'),
-    # ])
 
 
 model = my_model()
@@ -158,30 +147,37 @@ train_acc_metric = keras.metrics.BinaryAccuracy()
 mnist_features = vgg_feature_extractor(normal_train_images)
 train_dataset = tf.data.Dataset.from_tensor_slices(mnist_features)
 train_dataset = train_dataset.shuffle(batch_size).batch(batch_size)
-train(train_dataset, 20)
+train(train_dataset, 10)
 
 model.summary()
 
-# es = EarlyStopping(monitor='val_loss', mode='auto', restore_best_weights=True, verbose=1, patience=5)
-
-# model.fit(normal_train_images, normal_train_labels, batch_size=batch_size, epochs=20)
-
-valid_labels = np.argmax(np.vstack(valid_labels), axis=1)
-print(valid_labels.shape)
-
 # SWITCH TO INFERENCE MODE TO COMPUTE PREDICTIONS
 inference_model = get_inference_model(model)
+inference_model.summary()
+print(valid_labels.shape)
+
 
 # COMPUTE PREDICTIONS ON TEST DATA
 print(valid_images.shape)
-pred_test = inference_model.predict(valid_images) < 0.5
+pred_test = inference_model.predict(valid_images).ravel() < 0.5
+fpr_keras, tpr_keras, thresholds_keras = roc_curve(valid_labels, pred_test)
+auc_keras = auc(fpr_keras, tpr_keras)
 
-# ACCURACY ON TEST DATA
-print('ACCURACY:', accuracy_score(valid_labels, pred_test))
-
-# CONFUSION MATRIX ON TEST DATA
-cnf_matrix = confusion_matrix(valid_labels, pred_test)
-
-plt.figure(figsize=(7, 7))
-plot_confusion_matrix(cnf_matrix, classes=['not ONE', 'ONE'])
+plt.figure(1)
+plt.plot([0, 1], [0, 1], 'k--')
+plt.plot(fpr_keras, tpr_keras, label='Keras (area = {:.3f})'.format(auc_keras))
+plt.xlabel('False positive rate')
+plt.ylabel('True positive rate')
+plt.title('ROC curve')
+plt.legend(loc='best')
 plt.show()
+
+# # ACCURACY ON TEST DATA
+# print('ACCURACY:', accuracy_score(valid_labels, pred_test))
+#
+# # CONFUSION MATRIX ON TEST DATA
+# cnf_matrix = confusion_matrix(valid_labels, pred_test)
+#
+# plt.figure(figsize=(7, 7))
+# plot_confusion_matrix(cnf_matrix, classes=['not ONE', 'ONE'])
+# plt.show()
