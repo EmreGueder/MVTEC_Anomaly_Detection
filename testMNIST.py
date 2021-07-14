@@ -155,7 +155,6 @@ inference_model = get_inference_model(model)
 inference_model.summary()
 print(valid_labels.shape)
 
-
 # COMPUTE PREDICTIONS ON TEST DATA
 print(valid_images.shape)
 pred_test = inference_model.predict(valid_images).ravel() < 0.5
