@@ -1,4 +1,3 @@
-import itertools
 import os
 import random
 
@@ -6,31 +5,8 @@ import keras
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.metrics import roc_curve, auc
 from tensorflow.keras.applications import VGG16
-from tensorflow.keras.layers import *
-
-
-def plot_confusion_matrix(cm, classes, title='Confusion matrix', cmap=plt.cm.Blues):
-    cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-
-    plt.imshow(cm, interpolation='nearest', cmap=cmap)
-    plt.title(title, fontsize=25)
-    # plt.colorbar()
-    tick_marks = np.arange(len(classes))
-    plt.xticks(tick_marks, classes, rotation=90, fontsize=15)
-    plt.yticks(tick_marks, classes, fontsize=15)
-
-    fmt = '.2f'
-    thresh = cm.max() / 2.
-    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        plt.text(j, i, format(cm[i, j], fmt),
-                 horizontalalignment="center",
-                 color="white" if cm[i, j] > thresh else "black", fontsize=14)
-
-    plt.ylabel('True label', fontsize=20)
-    plt.xlabel('Predicted label', fontsize=20)
 
 
 def set_seed(seed):
@@ -58,10 +34,11 @@ test_images = tf.image.resize(test_images, [SHAPE[0], SHAPE[1]])
 train_images = tf.image.grayscale_to_rgb(train_images)
 train_images /= 255
 test_images = tf.image.grayscale_to_rgb(test_images)
+test_images /= 255
 
 # Get number 'one' from train images
 normal_train_images = train_images[train_labels == normal_label]
-print(normal_train_images.shape)
+print("Shape of normal train images: ", normal_train_images.shape)
 
 normal_train_labels = train_labels[train_labels == normal_label]
 
@@ -69,7 +46,7 @@ normal_train_labels = train_labels[train_labels == normal_label]
 normal_test_images = test_images[test_labels == normal_label]
 anomaly_test_images = test_images[test_labels == anomaly_label]
 valid_images = np.concatenate([normal_test_images, anomaly_test_images], axis=0)
-valid_labels = np.concatenate([np.ones(normal_test_images.shape[0]), np.zeros(anomaly_test_images.shape[0])], axis=0)
+valid_labels = np.concatenate([np.zeros(normal_test_images.shape[0]), np.ones(anomaly_test_images.shape[0])], axis=0)
 
 # Shuffle the test data
 rand_idx = np.arange(valid_images.shape[0])
@@ -85,7 +62,7 @@ def vgg_feature_extractor(dataset):
     vgg_out = vgg.output
     my_vgg = tf.keras.Model(inputs=vgg.input, outputs=vgg_out)
     features = my_vgg.predict(dataset)
-    print(features.shape)
+    print("Shape of extracted features: ", features.shape)
     return features
 
 
@@ -105,7 +82,7 @@ def train_step(batch):
     batch_shape = tf.shape(batch)
     noise = tf.random.normal(shape=batch_shape, stddev=0.1)
     new_batch = tf.concat([batch, noise], axis=0)
-    new_labels = tf.concat([tf.ones(shape=(batch_shape[0], 1)), tf.zeros(shape=(batch_shape[0], 1))], axis=0)
+    new_labels = tf.concat([tf.zeros(shape=(batch_shape[0], 1)), tf.ones(shape=(batch_shape[0], 1))], axis=0)
 
     with tf.GradientTape() as tape:
         preds = model(new_batch, training=True)
@@ -114,6 +91,7 @@ def train_step(batch):
         optimizer.apply_gradients(zip(grad, model.trainable_variables))
 
     train_acc_metric.update_state(new_labels, preds)
+    train_loss_metric.update_state(new_labels, preds)
 
 
 def train(dataset, epochs):
@@ -123,7 +101,9 @@ def train(dataset, epochs):
             train_step(batch)
 
         train_acc = train_acc_metric.result()
+        train_loss = train_loss_metric.result()
         print("Training acc over epoch: %.4f" % (float(train_acc),))
+        print("Training loss over epoch: %.4f" % (float(train_loss),))
         train_acc_metric.reset_states()
 
 
@@ -142,6 +122,7 @@ model = my_model()
 optimizer = tf.keras.optimizers.Adam(lr=1e-4)
 # Prepare the metrics.
 train_acc_metric = keras.metrics.BinaryAccuracy()
+train_loss_metric = keras.metrics.BinaryCrossentropy()
 
 mnist_features = vgg_feature_extractor(normal_train_images)
 train_dataset = tf.data.Dataset.from_tensor_slices(mnist_features)
@@ -153,29 +134,19 @@ model.summary()
 # SWITCH TO INFERENCE MODE TO COMPUTE PREDICTIONS
 inference_model = get_inference_model(model)
 inference_model.summary()
-print(valid_labels.shape)
+print("Shape of valid labels: ", valid_labels.shape)
 
 # COMPUTE PREDICTIONS ON TEST DATA
-print(valid_images.shape)
-pred_test = inference_model.predict(valid_images).ravel() < 0.5
-fpr_keras, tpr_keras, thresholds_keras = roc_curve(valid_labels, pred_test)
+print("Shape of valid images: ", valid_images.shape)
+pred_test = inference_model.predict(valid_images).ravel()
+fpr_keras, tpr_keras, thresholds_keras = roc_curve(valid_labels, pred_test, pos_label=1)
 auc_keras = auc(fpr_keras, tpr_keras)
 
 plt.figure(1)
 plt.plot([0, 1], [0, 1], 'k--')
-plt.plot(fpr_keras, tpr_keras, label='Keras (area = {:.3f})'.format(auc_keras))
+plt.plot(fpr_keras, tpr_keras, label='OC_CNN (area = {:.3f})'.format(auc_keras))
 plt.xlabel('False positive rate')
 plt.ylabel('True positive rate')
 plt.title('ROC curve')
 plt.legend(loc='best')
 plt.show()
-
-# # ACCURACY ON TEST DATA
-# print('ACCURACY:', accuracy_score(valid_labels, pred_test))
-#
-# # CONFUSION MATRIX ON TEST DATA
-# cnf_matrix = confusion_matrix(valid_labels, pred_test)
-#
-# plt.figure(figsize=(7, 7))
-# plot_confusion_matrix(cnf_matrix, classes=['not ONE', 'ONE'])
-# plt.show()
