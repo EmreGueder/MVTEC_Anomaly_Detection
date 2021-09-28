@@ -1,4 +1,3 @@
-import itertools
 import os
 import pathlib
 import random
@@ -9,7 +8,6 @@ import numpy as np
 import tensorflow as tf
 from sklearn.metrics import roc_curve, auc
 from tensorflow.keras.applications import VGG16
-from tensorflow.keras.layers import *
 from tensorflow.python.data.ops.dataset_ops import AUTOTUNE
 
 
@@ -21,44 +19,14 @@ def set_seed(seed):
 
 
 # DEFINE SOME PARAMETERS
-train_data_dir = 'C:/Users/Emre/PycharmProjects/Mnist_CNN_Test/carpet/train/'
-test_data_dir = 'C:/Users/Emre/PycharmProjects/Mnist_CNN_Test/carpet/test'
-SHAPE = (512, 512, 3)
+train_data_dir = 'carpet/train/'
+test_data_dir = 'carpet/test/'
+ground_truth_data_dir = 'carpet/ground_truth/'
 batch_size = 32
 set_seed(33)
 patch_size = 32
 img_height = 512
 img_width = 512
-
-# # Get data
-# train_ds = tf.keras.preprocessing.image_dataset_from_directory(
-#     train_data_dir,
-#     image_size=(SHAPE[0], SHAPE[1]),
-#     batch_size=batch_size)
-#
-# test_ds = tf.keras.preprocessing.image_dataset_from_directory(
-#     test_data_dir,
-#     image_size=(SHAPE[0], SHAPE[1]),
-#     batch_size=batch_size)
-#
-# normalization_layer = tf.keras.layers.experimental.preprocessing.Rescaling(1./255)
-# # Normalize the train dataset
-# normalized_train_ds = train_ds.map(lambda x, y: (normalization_layer(x), y))
-# train_images_batch, train_labels_batch = next(iter(normalized_train_ds))
-# train_images_batch = train_images_batch.numpy()
-# train_labels_batch = train_labels_batch.numpy()
-# print("Shape of train images:", train_images_batch.shape)
-# class_names = train_ds.class_names
-# print(class_names)
-#
-# # Normalize the test dataset
-# normalized_test_ds = test_ds.map(lambda x, y: (normalization_layer(x), y))
-# test_images_batch, test_labels_batch = next(iter(normalized_train_ds))
-# test_images_batch = test_images_batch.numpy()
-# test_labels_batch = test_labels_batch.numpy()
-# print("Shape of test images:", test_images_batch.shape)
-
-train_ds = tf.data.Dataset.list_files(str(pathlib.Path(train_data_dir + '*.png')))
 
 
 def get_label(file_path):
@@ -76,16 +44,7 @@ def decode_img(img):
     return tf.image.resize(img, [img_height, img_width])
 
 
-def process_path_test_ds(file_path):
-    label = get_label(file_path)
-    # load the raw data from the file as a string
-    img = tf.io.read_file(file_path)
-    img = decode_img(img)
-    img = tf.cast(img, tf.float32) / 255.0
-    return img, label
-
-
-def process_path_train_ds(file_path):
+def process_path(file_path):
     # load the raw data from the file as a string
     img = tf.io.read_file(file_path)
     img = decode_img(img)
@@ -99,10 +58,6 @@ def configure_for_performance(ds):
     ds = ds.batch(batch_size)
     ds = ds.prefetch(buffer_size=AUTOTUNE)
     return ds
-
-
-# Set `num_parallel_calls` so multiple images are loaded/processed in parallel.
-train_ds = train_ds.map(process_path_train_ds, num_parallel_calls=AUTOTUNE)
 
 
 def get_patches(images, patch_size):
@@ -184,13 +139,39 @@ optimizer = tf.keras.optimizers.Adam(lr=1e-4)
 train_acc_metric = keras.metrics.BinaryAccuracy()
 train_loss_metric = keras.metrics.BinaryCrossentropy()
 
+train_ds = tf.data.Dataset.list_files(str(pathlib.Path(train_data_dir + '*.png')))
+
+# Set `num_parallel_calls` so multiple images are loaded/processed in parallel.
+train_ds = train_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 train_ds_patches = get_patches(train_ds, patch_size)
 train_ds_patches = np.asarray(train_ds_patches)
 
+ground_truth_ds = tf.data.Dataset.list_files(str(pathlib.Path(ground_truth_data_dir + '*.png')), shuffle=False)
+for f in ground_truth_ds.take(10):
+    print(f.numpy())
+ground_truth_ds = ground_truth_ds.map(process_path, num_parallel_calls=AUTOTUNE)
+ground_truth_ds = get_patches(ground_truth_ds, patch_size)
+ground_truth_ds = np.asarray(ground_truth_ds)
+print(ground_truth_ds.shape)
 
-# test_images_patches = get_patches(test_images_batch, patch_size)
-# test_images_patches = np.asarray(test_images_patches)
-# print("Shape of test images in patches:", test_images_patches.shape)
+test_labels = []
+
+for image in ground_truth_ds:
+    if np.any(image > 0):
+        test_labels.append(1)
+    else:
+        test_labels.append(0)
+
+test_labels = np.asarray(test_labels)
+print(test_labels)
+
+test_ds = tf.data.Dataset.list_files(str(pathlib.Path(test_data_dir + '*.png')), shuffle=False)
+for f in test_ds.take(10):
+    print(f.numpy())
+test_ds = test_ds.map(process_path, num_parallel_calls=AUTOTUNE)
+test_ds = get_patches(test_ds, patch_size)
+test_ds = np.asarray(test_ds)
+print(test_ds.shape)
 
 train_ds_features = vgg_feature_extractor(train_ds_patches)
 train_ds_patches = tf.data.Dataset.from_tensor_slices(train_ds_features)
@@ -202,12 +183,12 @@ model.summary()
 # SWITCH TO INFERENCE MODE TO COMPUTE PREDICTIONS
 inference_model = get_inference_model(model)
 inference_model.summary()
-print("Shape of valid labels: ", test_labels_batch.shape)
+print("Shape of test labels: ", test_labels.shape)
 
 # COMPUTE PREDICTIONS ON TEST DATA
-print("Shape of valid images: ", test_images_patches.shape)
-pred_test = inference_model.predict(test_images_patches).ravel()
-fpr_keras, tpr_keras, thresholds_keras = roc_curve(test_labels_batch, pred_test, pos_label=1)
+print("Shape of test dataset: ", test_ds.shape)
+pred_test = inference_model.predict(test_ds).ravel()
+fpr_keras, tpr_keras, thresholds_keras = roc_curve(test_labels, pred_test, pos_label=1)
 auc_keras = auc(fpr_keras, tpr_keras)
 
 plt.figure(1)
