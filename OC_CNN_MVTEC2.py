@@ -163,7 +163,7 @@ for image in ground_truth_ds:
         test_labels.append(0)
 
 test_labels = np.asarray(test_labels)
-print(test_labels)
+print(test_labels.shape)
 
 test_ds = tf.data.Dataset.list_files(str(pathlib.Path(test_data_dir + '*.png')), shuffle=False)
 for f in test_ds.take(10):
@@ -172,6 +172,13 @@ test_ds = test_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 test_ds = get_patches(test_ds, patch_size)
 test_ds = np.asarray(test_ds)
 print(test_ds.shape)
+
+# Shuffle the test data
+rand_idx = np.arange(test_ds.shape[0])
+np.random.shuffle(rand_idx)
+
+test_ds = test_ds[rand_idx]
+test_labels = test_labels[rand_idx]
 
 train_ds_features = vgg_feature_extractor(train_ds_patches)
 train_ds_patches = tf.data.Dataset.from_tensor_slices(train_ds_features)
