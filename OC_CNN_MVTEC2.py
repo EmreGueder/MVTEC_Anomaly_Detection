@@ -18,10 +18,14 @@ def set_seed(seed):
     random.seed(seed)
 
 
+# train_data_dir = 'dataset/carpet/train/'
+# test_data_dir = 'dataset/carpet/test/'
+# ground_truth_data_dir = 'dataset/carpet/ground_truth/'
+
 # DEFINE SOME PARAMETERS
-train_data_dir = 'carpet/train/'
-test_data_dir = 'carpet/test/'
-ground_truth_data_dir = 'carpet/ground_truth/'
+train_data_dir = 'dataset/carpet/train/'
+test_data_dir = 'dataset/carpet/test/'
+ground_truth_data_dir = 'dataset/carpet/ground_truth/'
 batch_size = 32
 set_seed(33)
 patch_size = 32
@@ -29,12 +33,29 @@ img_height = 512
 img_width = 512
 
 
-def get_label(file_path):
-    # convert the path to a list of path components
-    parts = tf.strings.split(file_path, os.path.sep)
+def get_labels(dataset):
+    labels = []
+    for image in dataset:
+        if np.any(image > 0):
+            labels.append(1)
+        else:
+            labels.append(0)
+    labels = np.asarray(labels)
+    return labels
 
-    label = 0
-    return label
+
+def get_cutted_ds(test_dataset, ground_truth_dataset, labels, size):
+    my_list = []
+    counter = 0
+    for image in ground_truth_dataset:
+        if np.all(image == 0):
+            my_list.append(counter)
+        counter += 1
+        if len(my_list) >= size:
+            break
+    new_dataset = np.delete(test_dataset, my_list, axis=0)
+    new_labels = np.delete(labels, my_list, axis=0)
+    return new_dataset, new_labels
 
 
 def decode_img(img):
@@ -152,18 +173,10 @@ for f in ground_truth_ds.take(10):
 ground_truth_ds = ground_truth_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 ground_truth_ds = get_patches(ground_truth_ds, patch_size)
 ground_truth_ds = np.asarray(ground_truth_ds)
-print(ground_truth_ds.shape)
+print("Shape of ground truth dataset: ", ground_truth_ds.shape)
 
-test_labels = []
-
-for image in ground_truth_ds:
-    if np.any(image > 0):
-        test_labels.append(1)
-    else:
-        test_labels.append(0)
-
-test_labels = np.asarray(test_labels)
-print(test_labels.shape)
+test_labels = get_labels(ground_truth_ds)
+print("Shape of test labels: ", test_labels.shape)
 
 test_ds = tf.data.Dataset.list_files(str(pathlib.Path(test_data_dir + '*.png')), shuffle=False)
 for f in test_ds.take(10):
@@ -171,7 +184,10 @@ for f in test_ds.take(10):
 test_ds = test_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 test_ds = get_patches(test_ds, patch_size)
 test_ds = np.asarray(test_ds)
-print(test_ds.shape)
+print("Shape of test dataset", test_ds.shape)
+test_ds, test_labels = get_cutted_ds(test_ds, ground_truth_ds, test_labels, 20424)
+print("Shape of new test dataset", test_ds.shape)
+print("Shape of new test labels: ", test_labels.shape)
 
 # Shuffle the test data
 rand_idx = np.arange(test_ds.shape[0])
@@ -190,10 +206,8 @@ model.summary()
 # SWITCH TO INFERENCE MODE TO COMPUTE PREDICTIONS
 inference_model = get_inference_model(model)
 inference_model.summary()
-print("Shape of test labels: ", test_labels.shape)
 
 # COMPUTE PREDICTIONS ON TEST DATA
-print("Shape of test dataset: ", test_ds.shape)
 pred_test = inference_model.predict(test_ds).ravel()
 fpr_keras, tpr_keras, thresholds_keras = roc_curve(test_labels, pred_test, pos_label=1)
 auc_keras = auc(fpr_keras, tpr_keras)
