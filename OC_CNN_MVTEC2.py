@@ -23,10 +23,11 @@ def set_seed(seed):
 # ground_truth_data_dir = 'dataset/carpet/ground_truth/'
 
 # DEFINE SOME PARAMETERS
-train_data_dir = 'dataset/carpet/train/'
-test_data_dir = 'dataset/carpet/test/'
-ground_truth_data_dir = 'dataset/carpet/ground_truth/'
+train_data_dir = 'dataset/tile/train/'
+test_data_dir = 'dataset/tile/test/'
+ground_truth_data_dir = 'dataset/tile/ground_truth/'
 batch_size = 32
+epoch = 3
 set_seed(33)
 patch_size = 32
 img_height = 512
@@ -44,14 +45,19 @@ def get_labels(dataset):
     return labels
 
 
-def get_cutted_ds(test_dataset, ground_truth_dataset, labels, size):
+def get_cutted_ds(test_dataset, ground_truth_dataset, labels):
     my_list = []
     counter = 0
+    anomaly_count = 0
+    for image in ground_truth_dataset:
+        if np.any(image > 0):
+            anomaly_count += 1
+
     for image in ground_truth_dataset:
         if np.all(image == 0):
             my_list.append(counter)
         counter += 1
-        if len(my_list) >= size:
+        if len(my_list) >= ground_truth_dataset.shape[0] - 2*anomaly_count:
             break
     new_dataset = np.delete(test_dataset, my_list, axis=0)
     new_labels = np.delete(labels, my_list, axis=0)
@@ -149,7 +155,7 @@ def get_inference_model(my_model):
     vgg.trainable = False
     vgg_out = vgg.output
     my_inference_model = tf.keras.Model(inputs=vgg.input, outputs=my_model(vgg_out))
-    my_inference_model.compile(optimizer=optimizer, loss=keras.losses.binary_crossentropy, metrics=['accuracy'])
+    # my_inference_model.compile(optimizer=optimizer, loss=keras.losses.binary_crossentropy, metrics=['accuracy'])
 
     return my_inference_model
 
@@ -166,6 +172,7 @@ train_ds = tf.data.Dataset.list_files(str(pathlib.Path(train_data_dir + '*.png')
 train_ds = train_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 train_ds_patches = get_patches(train_ds, patch_size)
 train_ds_patches = np.asarray(train_ds_patches)
+print("Shape of train dataset: ", train_ds_patches.shape)
 
 ground_truth_ds = tf.data.Dataset.list_files(str(pathlib.Path(ground_truth_data_dir + '*.png')), shuffle=False)
 for f in ground_truth_ds.take(10):
@@ -185,7 +192,7 @@ test_ds = test_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 test_ds = get_patches(test_ds, patch_size)
 test_ds = np.asarray(test_ds)
 print("Shape of test dataset", test_ds.shape)
-test_ds, test_labels = get_cutted_ds(test_ds, ground_truth_ds, test_labels, 20424)
+test_ds, test_labels = get_cutted_ds(test_ds, ground_truth_ds, test_labels)
 print("Shape of new test dataset", test_ds.shape)
 print("Shape of new test labels: ", test_labels.shape)
 
@@ -199,7 +206,7 @@ test_labels = test_labels[rand_idx]
 train_ds_features = vgg_feature_extractor(train_ds_patches)
 train_ds_patches = tf.data.Dataset.from_tensor_slices(train_ds_features)
 train_ds_patches = configure_for_performance(train_ds_patches)
-train(train_ds_patches, 3)
+train(train_ds_patches, epoch)
 
 model.summary()
 
