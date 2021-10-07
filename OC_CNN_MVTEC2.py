@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics import roc_curve, auc
+from sklearn.model_selection import train_test_split
 from tensorflow.keras.applications import VGG16
 from tensorflow.python.data.ops.dataset_ops import AUTOTUNE
 
@@ -23,9 +24,9 @@ def set_seed(seed):
 # ground_truth_data_dir = 'dataset/carpet/ground_truth/'
 
 # DEFINE SOME PARAMETERS
-train_data_dir = 'dataset/tile/train/'
-test_data_dir = 'dataset/tile/test/'
-ground_truth_data_dir = 'dataset/tile/ground_truth/'
+train_data_dir = 'dataset/carpet/train/'
+test_data_dir = 'dataset/carpet/test/'
+ground_truth_data_dir = 'dataset/carpet/ground_truth/'
 batch_size = 32
 epoch = 3
 set_seed(33)
@@ -45,7 +46,7 @@ def get_labels(dataset):
     return labels
 
 
-def get_cutted_ds(test_dataset, ground_truth_dataset, labels):
+def remove_excessive_normal_images(test_dataset, ground_truth_dataset, labels):
     my_list = []
     counter = 0
     anomaly_count = 0
@@ -57,7 +58,7 @@ def get_cutted_ds(test_dataset, ground_truth_dataset, labels):
         if np.all(image == 0):
             my_list.append(counter)
         counter += 1
-        if len(my_list) >= ground_truth_dataset.shape[0] - 2*anomaly_count:
+        if len(my_list) >= ground_truth_dataset.shape[0] - 2 * anomaly_count:
             break
     new_dataset = np.delete(test_dataset, my_list, axis=0)
     new_labels = np.delete(labels, my_list, axis=0)
@@ -121,7 +122,7 @@ def my_model():
     return model
 
 
-def train_step(batch):
+def train_step(step, batch):
     batch_shape = tf.shape(batch)
     noise = tf.random.normal(shape=batch_shape, stddev=0.1)
     new_batch = tf.concat([batch, noise], axis=0)
@@ -134,20 +135,44 @@ def train_step(batch):
         optimizer.apply_gradients(zip(grad, model.trainable_variables))
 
     train_acc_metric.update_state(new_labels, preds)
-    train_loss_metric.update_state(new_labels, preds)
+
+    # Log every 200 batches.
+    if step % 200 == 0:
+        print(
+            "Training loss (for one batch) at step %d: %.4f"
+            % (step, float(loss))
+        )
+        print("Seen so far: %d samples" % ((step + 1) * batch_size))
+
+    # train_loss_metric.update_state(new_labels, preds)
 
 
-def train(dataset, epochs):
+def train(dataset, val_dataset, epochs):
     for epoch in range(epochs):
         print("\nStart of epoch %d" % (epoch,))
-        for batch in dataset:
-            train_step(batch)
+        for step, batch in enumerate(dataset):
+            train_step(step, batch)
+
+        # Run a validation loop at the end of each epoch.
+        for x_batch_val, y_batch_val in val_dataset:
+            val_logits = model(x_batch_val, training=False)
+            # Update val metrics
+            val_acc_metric.update_state(y_batch_val, val_logits)
+            # val_loss_metric.update_state(y_batch_val, val_logits)
 
         train_acc = train_acc_metric.result()
-        train_loss = train_loss_metric.result()
+        # train_loss = train_loss_metric.result()
+        val_acc = val_acc_metric.result()
+        # val_loss = val_loss_metric.result()
+
         print("Training acc over epoch: %.4f" % (float(train_acc),))
-        print("Training loss over epoch: %.4f" % (float(train_loss),))
+        # print("Training loss over epoch: %.4f" % (float(train_loss),))
+        print("Validation acc over epoch: %.4f" % (float(val_acc),))
+        # print("Validation loss over epoch: %.4f" % (float(val_loss),))
         train_acc_metric.reset_states()
+        val_acc_metric.reset_states()
+        # train_loss_metric.reset_states()
+        # val_loss_metric.reset_states()
 
 
 def get_inference_model(my_model):
@@ -164,7 +189,9 @@ model = my_model()
 optimizer = tf.keras.optimizers.Adam(lr=1e-4)
 # Prepare the metrics.
 train_acc_metric = keras.metrics.BinaryAccuracy()
-train_loss_metric = keras.metrics.BinaryCrossentropy()
+# train_loss_metric = keras.metrics.BinaryCrossentropy()
+val_acc_metric = keras.metrics.BinaryAccuracy()
+# val_loss_metric = keras.metrics.BinaryCrossentropy()
 
 train_ds = tf.data.Dataset.list_files(str(pathlib.Path(train_data_dir + '*.png')))
 
@@ -174,6 +201,7 @@ train_ds_patches = get_patches(train_ds, patch_size)
 train_ds_patches = np.asarray(train_ds_patches)
 print("Shape of train dataset: ", train_ds_patches.shape)
 
+# Get the ground truth dataset for labeling the images/patches
 ground_truth_ds = tf.data.Dataset.list_files(str(pathlib.Path(ground_truth_data_dir + '*.png')), shuffle=False)
 for f in ground_truth_ds.take(10):
     print(f.numpy())
@@ -185,6 +213,7 @@ print("Shape of ground truth dataset: ", ground_truth_ds.shape)
 test_labels = get_labels(ground_truth_ds)
 print("Shape of test labels: ", test_labels.shape)
 
+# Get the test dataset
 test_ds = tf.data.Dataset.list_files(str(pathlib.Path(test_data_dir + '*.png')), shuffle=False)
 for f in test_ds.take(10):
     print(f.numpy())
@@ -192,21 +221,31 @@ test_ds = test_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 test_ds = get_patches(test_ds, patch_size)
 test_ds = np.asarray(test_ds)
 print("Shape of test dataset", test_ds.shape)
-test_ds, test_labels = get_cutted_ds(test_ds, ground_truth_ds, test_labels)
-print("Shape of new test dataset", test_ds.shape)
-print("Shape of new test labels: ", test_labels.shape)
+test_ds, test_labels = remove_excessive_normal_images(test_ds, ground_truth_ds, test_labels)
+print("Shape of new test dataset with removed normal pictures:", test_ds.shape)
+print("Shape of new test labels with removed normal pictures:", test_labels.shape)
 
 # Shuffle the test data
 rand_idx = np.arange(test_ds.shape[0])
 np.random.shuffle(rand_idx)
-
 test_ds = test_ds[rand_idx]
 test_labels = test_labels[rand_idx]
+
+# Split a validation subset from the test dataset
+test_ds, valid_ds, test_labels, valid_labels = train_test_split(test_ds, test_labels, test_size=0.8)
+print("Shape of validation dataset:", valid_ds.shape)
+print("Shape of validation labels:", valid_labels.shape)
+print("Shape of splitted test dataset:", test_ds.shape)
+print("Shape of splitted test labels:", test_labels.shape)
 
 train_ds_features = vgg_feature_extractor(train_ds_patches)
 train_ds_patches = tf.data.Dataset.from_tensor_slices(train_ds_features)
 train_ds_patches = configure_for_performance(train_ds_patches)
-train(train_ds_patches, epoch)
+
+valid_ds_features = vgg_feature_extractor(valid_ds)
+valid_ds = tf.data.Dataset.from_tensor_slices((valid_ds_features, valid_labels))
+valid_ds = configure_for_performance(valid_ds)
+train(train_ds_patches, valid_ds, epoch)
 
 model.summary()
 
