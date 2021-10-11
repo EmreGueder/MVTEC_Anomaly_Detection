@@ -144,8 +144,6 @@ def train_step(step, batch):
         )
         print("Seen so far: %d samples" % ((step + 1) * batch_size))
 
-    # train_loss_metric.update_state(new_labels, preds)
-
 
 def train(dataset, val_dataset, epochs):
     for epoch in range(epochs):
@@ -158,22 +156,14 @@ def train(dataset, val_dataset, epochs):
             val_logits = model(x_batch_val, training=False)
             # Update val metrics
             val_acc_metric.update_state(y_batch_val, val_logits)
-            # val_loss_metric.update_state(y_batch_val, val_logits)
 
         train_acc = train_acc_metric.result()
-        # train_loss = train_loss_metric.result()
         val_acc = val_acc_metric.result()
-        # val_loss = val_loss_metric.result()
 
         print("Training acc over epoch: %.4f" % (float(train_acc),))
-        # print("Training loss over epoch: %.4f" % (float(train_loss),))
         print("Validation acc over epoch: %.4f" % (float(val_acc),))
-        # print("Validation loss over epoch: %.4f" % (float(val_loss),))
         train_acc_metric.reset_states()
         val_acc_metric.reset_states()
-        # train_loss_metric.reset_states()
-        # val_loss_metric.reset_states()
-
 
 def get_inference_model(my_model):
     vgg = VGG16(weights='imagenet', include_top=False, input_shape=(32, 32, 3))
@@ -189,9 +179,7 @@ model = my_model()
 optimizer = tf.keras.optimizers.Adam(lr=1e-4)
 # Prepare the metrics.
 train_acc_metric = keras.metrics.BinaryAccuracy()
-# train_loss_metric = keras.metrics.BinaryCrossentropy()
 val_acc_metric = keras.metrics.BinaryAccuracy()
-# val_loss_metric = keras.metrics.BinaryCrossentropy()
 
 train_ds = tf.data.Dataset.list_files(str(pathlib.Path(train_data_dir + '*.png')))
 
@@ -221,9 +209,9 @@ test_ds = test_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 test_ds = get_patches(test_ds, patch_size)
 test_ds = np.asarray(test_ds)
 print("Shape of test dataset", test_ds.shape)
-test_ds, test_labels = remove_excessive_normal_images(test_ds, ground_truth_ds, test_labels)
-print("Shape of new test dataset with removed normal pictures:", test_ds.shape)
-print("Shape of new test labels with removed normal pictures:", test_labels.shape)
+# test_ds, test_labels = remove_excessive_normal_images(test_ds, ground_truth_ds, test_labels)
+# print("Shape of new test dataset with removed normal pictures:", test_ds.shape)
+# print("Shape of new test labels with removed normal pictures:", test_labels.shape)
 
 # Shuffle the test data
 rand_idx = np.arange(test_ds.shape[0])
@@ -232,13 +220,26 @@ test_ds = test_ds[rand_idx]
 test_labels = test_labels[rand_idx]
 
 # Split a validation subset from the test dataset
-test_ds, valid_ds, test_labels, valid_labels = train_test_split(test_ds, test_labels, test_size=0.8)
+test_ds, valid_ds, test_labels, valid_labels = train_test_split(test_ds, test_labels, test_size=0.5, stratify=test_labels)
 print("Shape of validation dataset:", valid_ds.shape)
 print("Shape of validation labels:", valid_labels.shape)
 print("Shape of splitted test dataset:", test_ds.shape)
 print("Shape of splitted test labels:", test_labels.shape)
+# check if image and label are correctly binded
+# counter = 0
+# for label in valid_labels:
+#     if label == 1:
+#         # plot raw pixel data
+#         plt.imshow(valid_ds[counter])
+#         print(valid_labels[counter])
+#         # show the figure
+#         plt.show()
+#     counter += 1
 
 train_ds_features = vgg_feature_extractor(train_ds_patches)
+# delete_train_my_list = np.arange(68680)
+# train_ds_features = np.delete(train_ds_features, delete_train_my_list, axis=0)
+# print("Shape of reduced train dataset:", train_ds_features.shape)
 train_ds_patches = tf.data.Dataset.from_tensor_slices(train_ds_features)
 train_ds_patches = configure_for_performance(train_ds_patches)
 
