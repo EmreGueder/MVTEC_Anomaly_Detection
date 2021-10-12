@@ -258,7 +258,8 @@ inference_model = get_inference_model(model)
 inference_model.summary()
 
 # COMPUTE PREDICTIONS ON TEST DATA
-pred_test = inference_model.predict(test_ds).ravel()
+pred_test = (inference_model.predict(test_ds) > 0.0005260525).astype("int32").ravel()
+#pred_test = inference_model.predict(test_ds).ravel()
 print(pred_test)
 plt.figure(figsize=(30, 30))
 for i in range(256):
@@ -266,7 +267,7 @@ for i in range(256):
     plt.subplot(16, 16, i + 1)
     # plot raw pixel data
     image = test_ds[i]
-    if pred_test[i] > 0.98:  # 0.0005
+    if pred_test[i] == 1:
         image[0:32, :, 0] = 0.9  # 1 entspricht 255
     plt.imshow(image)
     plt.title(pred_test[i])
