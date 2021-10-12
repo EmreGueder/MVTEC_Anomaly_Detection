@@ -173,14 +173,8 @@ np.random.shuffle(rand_idx)
 test_ds = test_ds[rand_idx]
 test_labels = test_labels[rand_idx]
 
-# Split a validation subset from the test dataset
-test_ds, valid_ds, test_labels, valid_labels = train_test_split(test_ds, test_labels, test_size=0.5, stratify=test_labels)
-print("Shape of validation dataset:", valid_ds.shape)
-print("Shape of validation labels:", valid_labels.shape)
-print("Shape of split test dataset:", test_ds.shape)
-print("Shape of split test labels:", test_labels.shape)
 
-test_ds, trainA_ds, test_labels, trainA_labels = train_test_split(test_ds, test_labels, test_size=0.5, stratify=test_labels)
+test_ds, trainA_ds, test_labels, trainA_labels = train_test_split(test_ds, test_labels, test_size=0.6, stratify=test_labels)
 print("Shape of split test dataset:", test_ds.shape)
 print("Shape of split test labels:", test_labels.shape)
 print("Shape of train anomalies dataset:", trainA_ds.shape)
@@ -189,6 +183,14 @@ train_ds_patches = np.concatenate((train_ds_patches, trainA_ds), axis=0)
 train_labels = np.concatenate((train_labels, trainA_labels), axis=0)
 print("Shape of train anomalies dataset:", train_ds_patches.shape)
 print("Shape of train anomalies labels:", train_labels.shape)
+
+# Split a validation subset from the test dataset
+test_ds, valid_ds, test_labels, valid_labels = train_test_split(test_ds, test_labels, test_size=0.5, stratify=test_labels)
+print("Shape of validation dataset:", valid_ds.shape)
+print("Shape of validation labels:", valid_labels.shape)
+print("Shape of split test dataset:", test_ds.shape)
+print("Shape of split test labels:", test_labels.shape)
+
 # check if image and label are correctly binded
 # counter = 0
 # for label in valid_labels:
@@ -215,14 +217,13 @@ model.compile(optimizer='adam', loss=keras.losses.binary_crossentropy, metrics=[
 model.summary()
 results = model.fit(train_ds_patches, epochs=3, validation_data=valid_ds)
 
-
 # SWITCH TO INFERENCE MODE TO COMPUTE PREDICTIONS
 inference_model = get_inference_model(model)
 inference_model.summary()
 
-
 # COMPUTE PREDICTIONS ON TEST DATA
 pred_test = inference_model.predict(test_ds).ravel()
+print(pred_test)
 fpr_keras, tpr_keras, thresholds_keras = roc_curve(test_labels, pred_test, pos_label=1)
 auc_keras = auc(fpr_keras, tpr_keras)
 optimal_idx = np.argmax(tpr_keras - fpr_keras)
@@ -232,7 +233,7 @@ print("Threshold value is:", optimal_threshold)
 
 plt.figure(1)
 plt.plot([0, 1], [0, 1], 'k--')
-plt.plot(fpr_keras, tpr_keras, label='OC_CNN (area = {:.3f})'.format(auc_keras))
+plt.plot(fpr_keras, tpr_keras, label='Supervised VGG16 (area = {:.3f})'.format(auc_keras))
 plt.xlabel('False positive rate')
 plt.ylabel('True positive rate')
 plt.title('ROC curve')
@@ -244,7 +245,7 @@ plt.figure(2)
 plt.xlim(0, 0.2)
 plt.ylim(0.8, 1)
 plt.plot([0, 1], [0, 1], 'k--')
-plt.plot(fpr_keras, tpr_keras, label='OC_CNN (area = {:.3f})'.format(auc_keras))
+plt.plot(fpr_keras, tpr_keras, label='Supervised VGG16 (area = {:.3f})'.format(auc_keras))
 plt.xlabel('False positive rate')
 plt.ylabel('True positive rate')
 plt.title('ROC curve (zoomed in at top left)')
