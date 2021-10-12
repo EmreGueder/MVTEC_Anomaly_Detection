@@ -25,8 +25,8 @@ def set_seed(seed):
 
 # DEFINE SOME PARAMETERS
 train_data_dir = 'dataset/carpet/train/'
-test_data_dir = 'dataset/carpet/test/'
-ground_truth_data_dir = 'dataset/carpet/ground_truth/'
+test_data_dir = 'dataset/carpet/test/thread'
+ground_truth_data_dir = 'dataset/carpet/ground_truth/thread'
 batch_size = 32
 epoch = 2
 set_seed(33)

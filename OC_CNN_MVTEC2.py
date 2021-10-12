@@ -124,7 +124,7 @@ def my_model():
 
 def train_step(step, batch):
     batch_shape = tf.shape(batch)
-    noise = tf.random.normal(shape=batch_shape, stddev=0.1)
+    noise = tf.random.normal(shape=batch_shape, stddev=5.0)
     new_batch = tf.concat([batch, noise], axis=0)
     new_labels = tf.concat([tf.zeros(shape=(batch_shape[0], 1)), tf.ones(shape=(batch_shape[0], 1))], axis=0)
 
@@ -209,9 +209,9 @@ test_ds = test_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 test_ds = get_patches(test_ds, patch_size)
 test_ds = np.asarray(test_ds)
 print("Shape of test dataset", test_ds.shape)
-# test_ds, test_labels = remove_excessive_normal_images(test_ds, ground_truth_ds, test_labels)
-# print("Shape of new test dataset with removed normal pictures:", test_ds.shape)
-# print("Shape of new test labels with removed normal pictures:", test_labels.shape)
+test_ds, test_labels = remove_excessive_normal_images(test_ds, ground_truth_ds, test_labels)
+print("Shape of new test dataset with removed normal pictures:", test_ds.shape)
+print("Shape of new test labels with removed normal pictures:", test_labels.shape)
 
 # Shuffle the test data
 rand_idx = np.arange(test_ds.shape[0])
@@ -223,8 +223,8 @@ test_labels = test_labels[rand_idx]
 test_ds, valid_ds, test_labels, valid_labels = train_test_split(test_ds, test_labels, test_size=0.5, stratify=test_labels)
 print("Shape of validation dataset:", valid_ds.shape)
 print("Shape of validation labels:", valid_labels.shape)
-print("Shape of splitted test dataset:", test_ds.shape)
-print("Shape of splitted test labels:", test_labels.shape)
+print("Shape of split test dataset:", test_ds.shape)
+print("Shape of split test labels:", test_labels.shape)
 # check if image and label are correctly binded
 # counter = 0
 # for label in valid_labels:
@@ -254,10 +254,15 @@ model.summary()
 inference_model = get_inference_model(model)
 inference_model.summary()
 
+
 # COMPUTE PREDICTIONS ON TEST DATA
 pred_test = inference_model.predict(test_ds).ravel()
 fpr_keras, tpr_keras, thresholds_keras = roc_curve(test_labels, pred_test, pos_label=1)
 auc_keras = auc(fpr_keras, tpr_keras)
+optimal_idx = np.argmax(tpr_keras - fpr_keras)
+optimal_threshold = thresholds_keras[optimal_idx]
+print("Threshold value is:", optimal_threshold)
+
 
 plt.figure(1)
 plt.plot([0, 1], [0, 1], 'k--')
