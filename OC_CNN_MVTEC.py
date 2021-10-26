@@ -25,8 +25,8 @@ def set_seed(seed):
 
 # DEFINE SOME PARAMETERS
 train_data_dir = 'dataset/carpet/train/'
-test_data_dir = 'dataset/carpet/test/thread'
-ground_truth_data_dir = 'dataset/carpet/ground_truth/thread'
+test_data_dir = 'dataset/carpet/test/color'
+ground_truth_data_dir = 'dataset/carpet/ground_truth/color'
 batch_size = 32
 epoch = 2
 set_seed(33)
@@ -188,6 +188,8 @@ ground_truth_ds = get_patches(ground_truth_ds, patch_size)
 ground_truth_ds = np.asarray(ground_truth_ds)
 print("Shape of ground truth dataset: ", ground_truth_ds.shape)
 
+
+
 test_labels = get_labels(ground_truth_ds)
 print("Shape of test labels: ", test_labels.shape)
 
@@ -199,6 +201,20 @@ test_ds = test_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 test_ds = get_patches(test_ds, patch_size)
 test_ds = np.asarray(test_ds)
 print("Shape of test dataset", test_ds.shape)
+
+# plt.figure(figsize=(30, 30))
+# for i in range(256):
+#     # define subplot
+#     plt.subplot(16, 16, i + 1)
+#     # plot raw pixel data
+#     image = ground_truth_ds[i]
+#     # if test_labels[i] == 1:
+#        # image[0:32, :, 0] = 0.9  # 1 entspricht 255
+#     plt.imshow(image)
+#     plt.title(test_labels[i])
+#     plt.axis("off")
+# # show the figure
+# plt.show()
 
 # labelposindex = 0
 # plt.figure(figsize=(10, 10))
@@ -223,6 +239,8 @@ for i in range(256):
     plt.axis("off")
 # show the figure
 plt.show()
+
+
 
 # Shuffle the test data
 # rand_idx = np.arange(test_ds.shape[0])
@@ -253,11 +271,11 @@ train(train_ds_patches, epoch)
 
 model.summary()
 
-# SWITCH TO INFERENCE MODE TO COMPUTE PREDICTIONS
+# Switch to inference mode to compute predictions
 inference_model = get_inference_model(model)
 inference_model.summary()
 
-# COMPUTE PREDICTIONS ON TEST DATA
+# compute predictions on test data
 pred_test = (inference_model.predict(test_ds) > 0.0005260525).astype("int32").ravel()
 #pred_test = inference_model.predict(test_ds).ravel()
 print(pred_test)

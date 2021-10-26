@@ -19,14 +19,10 @@ def set_seed(seed):
     random.seed(seed)
 
 
-# train_data_dir = 'dataset/carpet/train/'
-# test_data_dir = 'dataset/carpet/test/'
-# ground_truth_data_dir = 'dataset/carpet/ground_truth/'
-
-# DEFINE SOME PARAMETERS
-train_data_dir = 'dataset/carpet/train/'
-test_data_dir = 'dataset/carpet/test/'
-ground_truth_data_dir = 'dataset/carpet/ground_truth/'
+# Define some parameters
+train_data_dir = 'dataset/tile/train/'
+test_data_dir = 'dataset/tile/test/'
+ground_truth_data_dir = 'dataset/tile/ground_truth/'
 batch_size = 32
 set_seed(33)
 patch_size = 32
@@ -125,7 +121,6 @@ def get_inference_model(my_model):
     vgg.trainable = False
     vgg_out = vgg.output
     my_inference_model = tf.keras.Model(inputs=vgg.input, outputs=my_model(vgg_out))
-    # my_inference_model.compile(optimizer=optimizer, loss=keras.losses.binary_crossentropy, metrics=['accuracy'])
 
     return my_inference_model
 
@@ -167,13 +162,6 @@ test_ds, test_labels = remove_excessive_normal_images(test_ds, ground_truth_ds, 
 print("Shape of new test dataset with removed normal pictures:", test_ds.shape)
 print("Shape of new test labels with removed normal pictures:", test_labels.shape)
 
-# Shuffle the test data
-rand_idx = np.arange(test_ds.shape[0])
-np.random.shuffle(rand_idx)
-test_ds = test_ds[rand_idx]
-test_labels = test_labels[rand_idx]
-
-
 test_ds, trainA_ds, test_labels, trainA_labels = train_test_split(test_ds, test_labels, test_size=0.6, stratify=test_labels)
 print("Shape of split test dataset:", test_ds.shape)
 print("Shape of split test labels:", test_labels.shape)
@@ -181,8 +169,8 @@ print("Shape of train anomalies dataset:", trainA_ds.shape)
 print("Shape of train anomalies labels:", trainA_labels.shape)
 train_ds_patches = np.concatenate((train_ds_patches, trainA_ds), axis=0)
 train_labels = np.concatenate((train_labels, trainA_labels), axis=0)
-print("Shape of train anomalies dataset:", train_ds_patches.shape)
-print("Shape of train anomalies labels:", train_labels.shape)
+print("Shape of train dataset with anomalies:", train_ds_patches.shape)
+print("Shape of train labels with anomalies:", train_labels.shape)
 
 # Split a validation subset from the test dataset
 test_ds, valid_ds, test_labels, valid_labels = train_test_split(test_ds, test_labels, test_size=0.5, stratify=test_labels)
@@ -191,21 +179,7 @@ print("Shape of validation labels:", valid_labels.shape)
 print("Shape of split test dataset:", test_ds.shape)
 print("Shape of split test labels:", test_labels.shape)
 
-# check if image and label are correctly binded
-# counter = 0
-# for label in valid_labels:
-#     if label == 1:
-#         # plot raw pixel data
-#         plt.imshow(valid_ds[counter])
-#         print(valid_labels[counter])
-#         # show the figure
-#         plt.show()
-#     counter += 1
-
 train_ds_features = vgg_feature_extractor(train_ds_patches)
-# delete_train_my_list = np.arange(68680)
-# train_ds_features = np.delete(train_ds_features, delete_train_my_list, axis=0)
-# print("Shape of reduced train dataset:", train_ds_features.shape)
 train_ds_patches = tf.data.Dataset.from_tensor_slices((train_ds_features, train_labels))
 train_ds_patches = configure_for_performance(train_ds_patches)
 
@@ -217,40 +191,26 @@ model.compile(optimizer='adam', loss=keras.losses.binary_crossentropy, metrics=[
 model.summary()
 results = model.fit(train_ds_patches, epochs=3, validation_data=valid_ds)
 
-# SWITCH TO INFERENCE MODE TO COMPUTE PREDICTIONS
+# Switch to inference mode to compute predictions
 inference_model = get_inference_model(model)
 inference_model.summary()
 
-# COMPUTE PREDICTIONS ON TEST DATA
+# Compute predictions on test data
 pred_test = inference_model.predict(test_ds).ravel()
-print(pred_test)
 fpr_keras, tpr_keras, thresholds_keras = roc_curve(test_labels, pred_test, pos_label=1)
 auc_keras = auc(fpr_keras, tpr_keras)
-optimal_idx = np.argmax(tpr_keras - fpr_keras)
-optimal_threshold = thresholds_keras[optimal_idx]
-print("Threshold value is:", optimal_threshold)
 
 
 plt.figure(1)
 plt.plot([0, 1], [0, 1], 'k--')
-plt.plot(fpr_keras, tpr_keras, label='Supervised VGG16 (area = {:.3f})'.format(auc_keras))
+plt.plot(fpr_keras, tpr_keras, label='VGG-16 (area = {:.3f})'.format(auc_keras))
 plt.xlabel('False positive rate')
 plt.ylabel('True positive rate')
-plt.title('ROC curve')
+plt.title('ROC curve VGG-16, Kategorie Fliese')
 plt.legend(loc='best')
 plt.show()
 
-# Zoom in view of the upper left corner.
-plt.figure(2)
-plt.xlim(0, 0.2)
-plt.ylim(0.8, 1)
-plt.plot([0, 1], [0, 1], 'k--')
-plt.plot(fpr_keras, tpr_keras, label='Supervised VGG16 (area = {:.3f})'.format(auc_keras))
-plt.xlabel('False positive rate')
-plt.ylabel('True positive rate')
-plt.title('ROC curve (zoomed in at top left)')
-plt.legend(loc='best')
-plt.show()
+
 
 
 
